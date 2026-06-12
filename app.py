@@ -553,55 +553,108 @@ with tab_sim:
         )
         st.markdown('</div>', unsafe_allow_html=True)
 
-        _, traj_AA, traj_Aa, traj_aa = simulate_nonrandom_mating(p0, F, generations)
+        traj_p, traj_AA, traj_Aa, traj_aa = simulate_nonrandom_mating(p0, F, generations)
         # HW 기대값 (F=0일 때 평형값)
         AA_hw, Aa_hw, aa_hw = hw_genotype_freq(p0)
+        q0_ = 1 - p0
         gens = list(range(generations + 1))   # 0세대부터 시작
 
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=gens, y=traj_AA, mode="lines",
-                                 line=dict(color=COLORS["AA"], width=2.5), name="AA (근친교배)"))
-        fig.add_trace(go.Scatter(x=gens, y=traj_Aa, mode="lines",
-                                 line=dict(color=COLORS["Aa"], width=2.5), name="Aa (근친교배)"))
-        fig.add_trace(go.Scatter(x=gens, y=traj_aa, mode="lines",
-                                 line=dict(color=COLORS["aa"], width=2.5), name="aa (근친교배)"))
+        # ── 두 그래프를 나란히 배치 ──────────────────────────────────────────
+        left, right = st.columns(2)
 
-        # HW 기대값 점선 (F=0 기준선)
-        for label, val, col in [("AA HW 기대 (F=0)", AA_hw, COLORS["AA"]),
-                                 ("Aa HW 기대 (F=0)", Aa_hw, COLORS["Aa"]),
-                                 ("aa HW 기대 (F=0)", aa_hw, COLORS["aa"])]:
-            fig.add_hline(y=val, line_dash="dot", line_color=col, opacity=0.4,
-                          annotation_text=label, annotation_font_size=11)
+        # 왼쪽: 유전자형 빈도 변화
+        with left:
+            fig_geno = go.Figure()
+            fig_geno.add_trace(go.Scatter(
+                x=gens, y=traj_AA, mode="lines",
+                line=dict(color=COLORS["AA"], width=2.5), name="AA"))
+            fig_geno.add_trace(go.Scatter(
+                x=gens, y=traj_Aa, mode="lines",
+                line=dict(color=COLORS["Aa"], width=2.5), name="Aa"))
+            fig_geno.add_trace(go.Scatter(
+                x=gens, y=traj_aa, mode="lines",
+                line=dict(color=COLORS["aa"], width=2.5), name="aa"))
 
-        fig.update_layout(
-            title=f"근친교배에 의한 유전자형 빈도 변화 (F = {F})",
-            xaxis_title="세대", yaxis_title="유전자형 빈도",
-            yaxis=dict(range=[0, 1]), height=400,
-            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#f9fbfd",
-            legend=dict(orientation="h", y=1.12),
-        )
-        st.plotly_chart(fig, use_container_width=True)
+            # HW 기대값 점선 (F=0 기준선)
+            for label, val, col in [("AA (F=0)", AA_hw, COLORS["AA"]),
+                                     ("Aa (F=0)", Aa_hw, COLORS["Aa"]),
+                                     ("aa (F=0)", aa_hw, COLORS["aa"])]:
+                fig_geno.add_hline(y=val, line_dash="dot", line_color=col, opacity=0.35,
+                                   annotation_text=label, annotation_font_size=10)
 
-        # 이형접합체 감소 수식 표시
-        H0 = 2 * p0 * (1 - p0)
+            fig_geno.update_layout(
+                title="📉 유전자형 빈도 변화",
+                xaxis_title="세대", yaxis_title="유전자형 빈도",
+                yaxis=dict(range=[0, 1]), height=400,
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#f9fbfd",
+                legend=dict(orientation="h", y=1.12),
+            )
+            st.plotly_chart(fig_geno, use_container_width=True)
+
+        # 오른쪽: 대립유전자 빈도 — 수평 유지
+        with right:
+            # 각 세대에서 p와 q를 AA·Aa·aa로부터 역산 (= 항상 p0, q0)
+            p_from_geno = [AA + Aa/2 for AA, Aa in zip(traj_AA, traj_Aa)]
+            q_from_geno = [aa + Aa/2 for aa, Aa in zip(traj_aa, traj_Aa)]
+
+            fig_allele = go.Figure()
+            fig_allele.add_trace(go.Scatter(
+                x=gens, y=p_from_geno, mode="lines",
+                line=dict(color=COLORS["p"], width=3), name=f"p (A 빈도)"))
+            fig_allele.add_trace(go.Scatter(
+                x=gens, y=q_from_geno, mode="lines",
+                line=dict(color=COLORS["q"], width=3), name=f"q (a 빈도)"))
+
+            # 기준선 강조
+            fig_allele.add_hline(
+                y=p0, line_dash="dot", line_color=COLORS["p"], opacity=0.3,
+                annotation_text=f"p₀ = {p0}", annotation_font_size=11)
+            fig_allele.add_hline(
+                y=q0_, line_dash="dot", line_color=COLORS["q"], opacity=0.3,
+                annotation_text=f"q₀ = {q0_:.2f}", annotation_font_size=11)
+
+            # 불변 강조 박스 텍스트
+            fig_allele.add_annotation(
+                x=generations * 0.5, y=0.5,
+                text="p, q 불변 ✔",
+                showarrow=False,
+                font=dict(size=18, color="#1e9e5a"),
+                opacity=0.18,
+            )
+
+            fig_allele.update_layout(
+                title="📌 대립유전자 빈도 — 세대 내내 일정",
+                xaxis_title="세대", yaxis_title="대립유전자 빈도",
+                yaxis=dict(range=[0, 1]), height=400,
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#f9fbfd",
+                legend=dict(orientation="h", y=1.12),
+            )
+            st.plotly_chart(fig_allele, use_container_width=True)
+
+        # ── 수식 및 지표 ─────────────────────────────────────────────────────
+        H0 = 2 * p0 * q0_
         Aa_final = traj_Aa[-1]
         st.markdown(
             f'<div class="formula-box">'
             f'H<sub>t</sub> = H<sub>0</sub> × (1 − F)<sup>t</sup> &nbsp;=&nbsp; '
             f'{H0:.3f} × (1 − {F})<sup>{generations}</sup> &nbsp;=&nbsp; <strong>{Aa_final:.4f}</strong>'
+            f'&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;'
+            f'p = AA + Aa/2 = <strong>{p_from_geno[-1]:.4f}</strong> (불변)'
             f'</div>',
             unsafe_allow_html=True,
         )
 
-        col1, col2, col3 = st.columns(3)
-        col1.metric("AA (실제 vs HW)", f"{traj_AA[-1]:.3f}", delta=f"{traj_AA[-1]-AA_hw:+.3f}")
-        col2.metric("Aa (실제 vs HW)", f"{traj_Aa[-1]:.3f}", delta=f"{traj_Aa[-1]-Aa_hw:+.3f}")
-        col3.metric("aa (실제 vs HW)", f"{traj_aa[-1]:.3f}", delta=f"{traj_aa[-1]-aa_hw:+.3f}")
+        col1, col2, col3, col4, col5 = st.columns(5)
+        col1.metric("p (A 빈도)", f"{p_from_geno[-1]:.4f}", delta="0.0000 변화없음")
+        col2.metric("q (a 빈도)", f"{q_from_geno[-1]:.4f}", delta="0.0000 변화없음")
+        col3.metric("AA vs HW", f"{traj_AA[-1]:.3f}", delta=f"{traj_AA[-1]-AA_hw:+.3f}")
+        col4.metric("Aa vs HW", f"{traj_Aa[-1]:.3f}", delta=f"{traj_Aa[-1]-Aa_hw:+.3f}")
+        col5.metric("aa vs HW", f"{traj_aa[-1]:.3f}", delta=f"{traj_aa[-1]-aa_hw:+.3f}")
 
         st.info(
-            "💡 근친교배는 대립유전자 빈도를 바꾸지 않습니다. "
-            "그러나 이형접합체 감소로 **유전적 다양성이 감소**하며, "
-            "열성 유전질환의 표현형 발현 확률이 높아집니다."
+            f"💡 오른쪽 그래프를 보세요. p와 q는 F={F}, {generations}세대 후에도 "
+            f"**p={p0}, q={q0_:.2f}로 완전히 일정**합니다. "
+            "근친교배는 유전자형 빈도(왼쪽)만 바꿀 뿐, 대립유전자 빈도 자체는 변화시키지 않습니다."
         )
 
 
