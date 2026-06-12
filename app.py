@@ -191,21 +191,33 @@ def simulate_migration(p0, p_m, m, generations):
     return traj
 
 def simulate_nonrandom_mating(p0, F_inbreeding, generations):
-    """비무작위 교배 (근친교배 계수 F)"""
+    """비무작위 교배 (근친교배 계수 F) — 세대별 누적 모델.
+
+    매 세대 이형접합체의 비율이 (1 - F)배씩 감소한다.
+    - H_t = H_0 * (1 - F)^t  (H: 이형접합체 빈도)
+    - 대립유전자 빈도 p는 변하지 않음
+    - 남은 빈도(1 - H_t)는 p:q 비율로 AA와 aa에 분배
+    """
     p = p0
-    traj_p = [p]
-    traj_AA = []
-    traj_Aa = []
-    traj_aa = []
-    for _ in range(generations):
-        q = 1 - p
-        AA = p**2 * (1 - F_inbreeding) + p * F_inbreeding
-        Aa = 2*p*q * (1 - F_inbreeding)
-        aa = q**2 * (1 - F_inbreeding) + q * F_inbreeding
-        traj_AA.append(AA)
-        traj_Aa.append(Aa)
-        traj_aa.append(aa)
-        traj_p.append(p)  # 비무작위 교배만으로는 대립유전자 빈도 변화 없음
+    q = 1 - p
+    H0 = 2 * p * q          # 초기 HW 이형접합체 빈도
+
+    traj_p  = [p]
+    traj_AA = [p**2]         # 0세대: HW 기대값
+    traj_Aa = [H0]
+    traj_aa = [q**2]
+
+    for t in range(1, generations + 1):
+        # 이형접합체 빈도가 매 세대 (1-F) 배 감소
+        Aa = H0 * (1 - F_inbreeding) ** t
+        # 나머지 (1 - Aa)를 p:q 비율로 동형접합체에 분배
+        AA = p - Aa / 2          # p = AA + Aa/2 항상 성립
+        aa = q - Aa / 2          # q = aa + Aa/2 항상 성립
+        traj_AA.append(max(AA, 0))
+        traj_Aa.append(max(Aa, 0))
+        traj_aa.append(max(aa, 0))
+        traj_p.append(p)         # 대립유전자 빈도는 불변
+
     return traj_p, traj_AA, traj_Aa, traj_aa
 
 COLORS = {
@@ -542,9 +554,9 @@ with tab_sim:
         st.markdown('</div>', unsafe_allow_html=True)
 
         _, traj_AA, traj_Aa, traj_aa = simulate_nonrandom_mating(p0, F, generations)
-        # HW 기대값
+        # HW 기대값 (F=0일 때 평형값)
         AA_hw, Aa_hw, aa_hw = hw_genotype_freq(p0)
-        gens = list(range(1, generations + 1))
+        gens = list(range(generations + 1))   # 0세대부터 시작
 
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=gens, y=traj_AA, mode="lines",
@@ -554,20 +566,32 @@ with tab_sim:
         fig.add_trace(go.Scatter(x=gens, y=traj_aa, mode="lines",
                                  line=dict(color=COLORS["aa"], width=2.5), name="aa (근친교배)"))
 
-        # HW 기대값 점선
-        for label, val, col in [("AA HW 기대", AA_hw, COLORS["AA"]),
-                                 ("Aa HW 기대", Aa_hw, COLORS["Aa"]),
-                                 ("aa HW 기대", aa_hw, COLORS["aa"])]:
-            fig.add_hline(y=val, line_dash="dot", line_color=col, opacity=0.5)
+        # HW 기대값 점선 (F=0 기준선)
+        for label, val, col in [("AA HW 기대 (F=0)", AA_hw, COLORS["AA"]),
+                                 ("Aa HW 기대 (F=0)", Aa_hw, COLORS["Aa"]),
+                                 ("aa HW 기대 (F=0)", aa_hw, COLORS["aa"])]:
+            fig.add_hline(y=val, line_dash="dot", line_color=col, opacity=0.4,
+                          annotation_text=label, annotation_font_size=11)
 
         fig.update_layout(
             title=f"근친교배에 의한 유전자형 빈도 변화 (F = {F})",
             xaxis_title="세대", yaxis_title="유전자형 빈도",
-            yaxis=dict(range=[0, 1]), height=380,
+            yaxis=dict(range=[0, 1]), height=400,
             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#f9fbfd",
             legend=dict(orientation="h", y=1.12),
         )
         st.plotly_chart(fig, use_container_width=True)
+
+        # 이형접합체 감소 수식 표시
+        H0 = 2 * p0 * (1 - p0)
+        Aa_final = traj_Aa[-1]
+        st.markdown(
+            f'<div class="formula-box">'
+            f'H<sub>t</sub> = H<sub>0</sub> × (1 − F)<sup>t</sup> &nbsp;=&nbsp; '
+            f'{H0:.3f} × (1 − {F})<sup>{generations}</sup> &nbsp;=&nbsp; <strong>{Aa_final:.4f}</strong>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
         col1, col2, col3 = st.columns(3)
         col1.metric("AA (실제 vs HW)", f"{traj_AA[-1]:.3f}", delta=f"{traj_AA[-1]-AA_hw:+.3f}")
